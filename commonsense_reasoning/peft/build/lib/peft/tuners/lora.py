@@ -1,11 +1,3 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
-#
-# NVIDIA CORPORATION and its licensors retain all intellectual property
-# and proprietary rights in and to this software, related documentation
-# and any modifications thereto.  Any use, reproduction, disclosure or
-# distribution of this software and related documentation without an express
-# license agreement from NVIDIA CORPORATION is strictly prohibited.
-
 # coding=utf-8
 # Copyright 2023-present the HuggingFace Inc. team.
 #
@@ -45,7 +37,7 @@ if is_bnb_available():
 
 
 @dataclass
-class DoraConfig(PeftConfig):
+class LoraConfig(PeftConfig):
     """
     This is the configuration class to store the configuration of a [`~peft.Lora`].
 
@@ -73,19 +65,6 @@ class DoraConfig(PeftConfig):
     )
     lora_alpha: int = field(default=None, metadata={"help": "Lora alpha"})
     lora_dropout: float = field(default=None, metadata={"help": "Lora dropout"})
-    num_loras: int = field(default=1, metadata={"help": "Number of parallel LoRA modules"})
-    orthogonal_features: bool = field(default=False, metadata={"help": "Apply cosine orthogonality constraint between features"})
-    orthogonal_parameters: bool = field(default=False, metadata={"help": "Apply cosine orthogonality constraint between LoRA parameters"})
-    dora_simple: bool = field(
-        default=True, metadata={"help": "Whether to apply simple dora ver to save up GPU memory"}
-    )
-    Wdecompose_target_modules: Optional[Union[List[str], str]] = field(
-        default=None,
-        metadata={
-            "help": "List of module names or regex expression of the module names to only tune the magnitude part"
-            "For example, ['q', 'v'] or '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$' "
-        },
-    )
     merge_weights: bool = field(
         default=False, metadata={"help": "Merge weights of the original model and the Lora model"}
     )
@@ -105,10 +84,10 @@ class DoraConfig(PeftConfig):
     )
 
     def __post_init__(self):
-        self.peft_type = PeftType.DORA
+        self.peft_type = PeftType.LORA
 
 
-class DoraModel(torch.nn.Module):
+class LoraModel(torch.nn.Module):
     """
     Creates Low Rank Adapter (Lora) model from a pretrained transformers model.
 
@@ -156,7 +135,6 @@ class DoraModel(torch.nn.Module):
             "fan_in_fan_out": self.peft_config.fan_in_fan_out,
             "merge_weights": (self.peft_config.merge_weights or self.peft_config.inference_mode)
             and not is_hf_device_map_available,
-            "dora_simple": self.peft_config.dora_simple,
         }
         key_list = [key for key, _ in self.model.named_modules()]
         for key in key_list:
@@ -164,15 +142,6 @@ class DoraModel(torch.nn.Module):
                 target_module_found = re.fullmatch(self.peft_config.target_modules, key)
             else:
                 target_module_found = any(key.endswith(target_key) for target_key in self.peft_config.target_modules)
-
-            if isinstance(self.peft_config.Wdecompose_target_modules, str):
-                wdecompose_target_module_found = re.fullmatch(self.peft_config.Wdecompose_target_modules, key)
-            elif self.peft_config.Wdecompose_target_modules == None:
-                wdecompose_target_module_found = False
-            else:
-                wdecompose_target_module_found = any(key.endswith(target_key) for target_key in self.peft_config.Wdecompose_target_modules)
-
-
             if target_module_found:
                 if not is_target_modules_in_base_model:
                     is_target_modules_in_base_model = True
@@ -188,55 +157,29 @@ class DoraModel(torch.nn.Module):
                         }
                     )
                     if self.peft_config.enable_lora is None:
+                        print("8 bit lora")
                         new_module = Linear8bitLt(target.in_features, target.out_features, bias=bias, **kwargs)
                     else:
-                        raise NotImplementedError
-                    
+                        kwargs.update({"enable_lora": self.peft_config.enable_lora})
+                        new_module = MergedLinear8bitLt(target.in_features, target.out_features, bias=bias, **kwargs)
                 elif isinstance(target, torch.nn.Linear) and self.peft_config.enable_lora is None:
-                    # new_module = Linear(target.in_features, target.out_features, bias=bias, **kwargs)
-
-                    new_module = MultiLinear(
-                        target.in_features,
-                        target.out_features,
-                        num_loras=self.peft_config.num_loras,
-                        orthogonal_features=self.peft_config.orthogonal_features,
-                        orthogonal_parameters=self.peft_config.orthogonal_parameters,
-                        bias=bias,
-                        **kwargs,
-                    )
-
-
+                    new_module = Linear(target.in_features, target.out_features, bias=bias, **kwargs)
                 elif self.peft_config.enable_lora is not None:
-                    raise NotImplementedError
-
-                self._replace_module(parent, target_name, new_module, target)
-
-            elif wdecompose_target_module_found:
-                if not is_target_modules_in_base_model:
-                    is_target_modules_in_base_model = True
-                parent, target, target_name = self._get_submodules(key)
-                bias = target.bias is not None
-                if loaded_in_8bit and isinstance(target, bnb.nn.Linear8bitLt):
-                    kwargs.update(
-                        {
-                            "has_fp16_weights": target.state.has_fp16_weights,
-                            "memory_efficient_backward": target.state.memory_efficient_backward,
-                            "threshold": target.state.threshold,
-                            "index": target.index,
-                        }
-                    )
-                    if self.peft_config.enable_lora is None:
-                        new_module = Linear8bitLt(target.in_features, target.out_features, bias=bias, **kwargs)
+                    kwargs.update({"enable_lora": self.peft_config.enable_lora})
+                    if isinstance(target, Conv1D):
+                        in_features, out_features = (
+                            target.weight.ds_shape if hasattr(target.weight, "ds_shape") else target.weight.shape
+                        )
                     else:
-                        raise NotImplementedError
-
-                elif isinstance(target, torch.nn.Linear) and self.peft_config.enable_lora is None:
-                    new_module = Linear(target.in_features, target.out_features, bias=bias, Wdecompose= True, **kwargs)
-                elif self.peft_config.enable_lora is not None:
-                    raise NotImplementedError
+                        in_features, out_features = target.in_features, target.out_features
+                        if kwargs["fan_in_fan_out"]:
+                            warnings.warn(
+                                "fan_in_fan_out is set to True but the target module is not a Conv1D. "
+                                "Setting fan_in_fan_out to False."
+                            )
+                            kwargs["fan_in_fan_out"] = self.peft_config.fan_in_fan_out = False
+                    new_module = MergedLinear(in_features, out_features, bias=bias, **kwargs)
                 self._replace_module(parent, target_name, new_module, target)
-
- 
         if not is_target_modules_in_base_model:
             raise ValueError(
                 f"Target modules {self.peft_config.target_modules} not found in the base model. "
@@ -252,13 +195,6 @@ class DoraModel(torch.nn.Module):
     def _replace_module(self, parent_module, child_name, new_module, old_module):
         setattr(parent_module, child_name, new_module)
         new_module.weight = old_module.weight
-
-        # 
-        with torch.no_grad():
-            magnitude = (torch.linalg.norm(new_module.weight.detach(),dim=1)).unsqueeze(1).detach()
-            new_module.weight_m_wdecomp.weight.copy_(magnitude)
-        
-
         if old_module.bias is not None:
             new_module.bias = old_module.bias
         if getattr(old_module, "state", None) is not None:
@@ -267,7 +203,7 @@ class DoraModel(torch.nn.Module):
 
         # dispatch to correct device
         for name, module in new_module.named_modules():
-            if "lora_" in name or "weight_m_wdecomp" in name:
+            if "lora_" in name:
                 module.to(old_module.weight.device)
 
     def __getattr__(self, name: str):
@@ -312,10 +248,8 @@ class DoraModel(torch.nn.Module):
 # had to adapt it for `lora_only` to work
 def mark_only_lora_as_trainable(model: nn.Module, bias: str = "none") -> None:
     for n, p in model.named_parameters():
-        if "lora_" not in n and "weight_m_wdecomp" not in n:
+        if "lora_" not in n:
             p.requires_grad = False
-        else:
-            print(f"{n} is trainable")
     if bias == "none":
         return
     elif bias == "all":
@@ -362,26 +296,19 @@ class Linear(nn.Linear, LoraLayer):
         lora_dropout: float = 0.0,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
         merge_weights: bool = True,
-        Wdecompose: bool = False,
-        dora_simple: bool = True,
         **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
         LoraLayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
 
-        self.weight_m_wdecomp = nn.Linear(1,out_features,bias=False) # self.weight_m_wdecomp.weight # shape: out_features, 1
-
         self.fan_in_fan_out = fan_in_fan_out
-        self.Wdecompose = Wdecompose # whether to tune only the magnitude component of Wdecompose or not
-        self.dora_simple = dora_simple # whether to use dora simple to save up GPU memory
-        if self.Wdecompose == False:
-            if r > 0:
-                self.lora_A = nn.Linear(in_features, r, bias=False)
-                self.lora_B = nn.Linear(r, out_features, bias=False)
-                self.scaling = self.lora_alpha / self.r
-                # Freezing the pre-trained weight matrix
-
-        self.weight.requires_grad = False
+        # Actual trainable parameters
+        if r > 0:
+            self.lora_A = nn.Linear(in_features, r, bias=False)
+            self.lora_B = nn.Linear(r, out_features, bias=False)
+            self.scaling = self.lora_alpha / self.r
+            # Freezing the pre-trained weight matrix
+            self.weight.requires_grad = False
         self.reset_parameters()
         if fan_in_fan_out:
             self.weight.data = self.weight.data.T
@@ -395,236 +322,49 @@ class Linear(nn.Linear, LoraLayer):
 
     def train(self, mode: bool = True):
         nn.Linear.train(self, mode)
-        if self.Wdecompose == False:
-            self.lora_A.train(mode)
-            self.lora_B.train(mode)
-        self.weight_m_wdecomp.train(mode)
+        self.lora_A.train(mode)
+        self.lora_B.train(mode)
 
         if not mode and self.merge_weights and not self.merged:
             # Merge the weights and mark it
-            if self.Wdecompose:
-                norm_scale = ( self.weight_m_wdecomp.weight / (torch.linalg.norm(self.weight,dim=1)).unsqueeze(1) )
-                weight = norm_scale * self.weight
-                self.weight.data.copy_(weight.detach())
-            else:
-                if self.r > 0:
-                    new_weight_v = self.weight + transpose(self.lora_B.weight @ self.lora_A.weight, fan_in_fan_out=self.fan_in_fan_out) * self.scaling
-                    weight = ( self.weight_m_wdecomp.weight / (torch.linalg.norm(new_weight_v,dim=1)).unsqueeze(1)) * new_weight_v
-                    self.weight.data.copy_(weight.detach())
+            if self.r > 0:
+                self.weight.data += (
+                    transpose(self.lora_B.weight @ self.lora_A.weight, self.fan_in_fan_out) * self.scaling
+                )
             self.merged = True
         elif self.merge_weights and self.merged:
-            raise NotImplementedError
+            # Make sure that the weights are not merged
+            if self.r > 0:
+                self.weight.data -= (
+                    transpose(self.lora_B.weight @ self.lora_A.weight, self.fan_in_fan_out) * self.scaling
+                )
+            self.merged = False
 
     def eval(self):
         nn.Linear.eval(self)
-        if self.Wdecompose == False:
-            self.lora_A.eval()
-            self.lora_B.eval()
-        self.weight_m_wdecomp.eval()
-
+        self.lora_A.eval()
+        self.lora_B.eval()
 
     def forward(self, x: torch.Tensor):
         previous_dtype = self.weight.dtype
-
         if self.disable_adapters:
-            raise NotImplementedError
-        
-        elif self.Wdecompose and not self.merged:
+            if self.r > 0 and self.merged:
+                matmul_output = self.lora_B.weight @ self.lora_A.weight
+                self.weight.data -= transpose(matmul_output.to(previous_dtype), self.fan_in_fan_out) * self.scaling
+                self.merged = False
 
-
-            norm_scale = self.weight_m_wdecomp.weight.view(-1) / (torch.linalg.norm(self.weight,dim=1))
-
-            org_result = (F.linear(x, transpose(self.weight, self.fan_in_fan_out)))
-
-            result = org_result + (norm_scale-1) * (F.linear(self.lora_dropout(x), transpose(self.weight, self.fan_in_fan_out)))
-
-            if not self.bias is None:
-                    result += self.bias.view(1, -1).expand_as(result)
-
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
         elif self.r > 0 and not self.merged:
-            
-            new_weight_v = self.weight + (self.lora_B.weight @ self.lora_A.weight) * self.scaling
-
-            if self.dora_simple:
-                norm_scale = self.weight_m_wdecomp.weight.view(-1) / (torch.linalg.norm(new_weight_v,dim=1)).detach()
-            else:
-                norm_scale = self.weight_m_wdecomp.weight.view(-1) / (torch.linalg.norm(new_weight_v,dim=1))
-
-            org_result = (F.linear(x, transpose(self.weight, self.fan_in_fan_out)))
-
-            dropout_x = self.lora_dropout(x)
-
-            result = org_result + (norm_scale-1) * (F.linear(dropout_x, transpose(self.weight, self.fan_in_fan_out)))
-
-            if not self.bias is None:
-                    result += self.bias.view(1, -1).expand_as(result)
-
-            result += ( norm_scale * (self.lora_B(self.lora_A(dropout_x.to(self.lora_A.weight.dtype))))) * self.scaling
-            
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
+            if self.r > 0:
+                result += ((self.lora_dropout(x.to(self.lora_A.weight.dtype)) @ self.lora_A.weight.T) @ self.lora_B.weight.T) * self.scaling
         else:
-             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
 
         if result.dtype != previous_dtype:
             result = result.to(previous_dtype)
 
         return result
-
-class MultiLinear(nn.Linear, LoraLayer):
-    """Linear layer supporting multiple parallel LoRA adapters for DoRA."""
-
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        r: int = 0,
-        num_loras: int = 1,
-        lora_alpha: int = 1,
-        lora_dropout: float = 0.0,
-        fan_in_fan_out: bool = False,
-        merge_weights: bool = True,
-        Wdecompose: bool = False,
-        dora_simple: bool = True,
-        orthogonal_features: bool = False,
-        orthogonal_parameters: bool = False,
-        **kwargs,
-    ):
-        nn.Linear.__init__(self, in_features, out_features, **kwargs)
-        LoraLayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
-
-        self.weight_m_wdecomp = nn.Linear(1, out_features, bias=False)
-        self.num_loras = num_loras
-        self.orthogonal_features = orthogonal_features
-        self.orthogonal_parameters = orthogonal_parameters
-        self.fan_in_fan_out = fan_in_fan_out
-        self.Wdecompose = Wdecompose
-        self.dora_simple = dora_simple
-
-        if not self.Wdecompose and r > 0 and num_loras > 0:
-            self.lora_A = nn.ModuleList([nn.Linear(in_features, r, bias=False) for _ in range(num_loras)])
-            self.lora_B = nn.ModuleList([nn.Linear(r, out_features, bias=False) for _ in range(num_loras)])
-            self.scaling = self.lora_alpha / self.r
-            self.weight.requires_grad = False
-
-        self.reset_parameters()
-        if fan_in_fan_out:
-            self.weight.data = self.weight.data.T
-
-    def reset_parameters(self):
-        nn.Linear.reset_parameters(self)
-        if hasattr(self, "lora_A"):
-            for A, B in zip(self.lora_A, self.lora_B):
-                nn.init.kaiming_uniform_(A.weight, a=math.sqrt(5))
-                nn.init.zeros_(B.weight)
-
-    def _aggregate(self, features: List[torch.Tensor]) -> torch.Tensor:
-        stack = torch.stack(features, dim=0)
-        return stack.sum(dim=0)
-
-    def _orthogonality_loss(self, features: List[torch.Tensor]) -> torch.Tensor:
-        loss = 0.0
-        if self.orthogonal_features and len(features) > 1:
-            for i in range(len(features)):
-                for j in range(i + 1, len(features)):
-                    f1 = features[i].flatten(1)
-                    f2 = features[j].flatten(1)
-                    loss = loss + torch.abs(F.cosine_similarity(f1, f2, dim=1)).mean()
-        if self.orthogonal_parameters and hasattr(self, "lora_A") and len(self.lora_A) > 1:
-            for i in range(len(self.lora_A)):
-                wi = (self.lora_B[i].weight @ self.lora_A[i].weight).flatten()
-                for j in range(i + 1, len(self.lora_A)):
-                    wj = (self.lora_B[j].weight @ self.lora_A[j].weight).flatten()
-                    loss = loss + torch.abs(F.cosine_similarity(wi, wj, dim=0))
-        return loss
-
-    def train(self, mode: bool = True):
-        nn.Linear.train(self, mode)
-        if not self.Wdecompose and hasattr(self, "lora_A"):
-            for A, B in zip(self.lora_A, self.lora_B):
-                A.train(mode)
-                B.train(mode)
-        self.weight_m_wdecomp.train(mode)
-
-        if not mode and self.merge_weights and not self.merged:
-            if self.Wdecompose:
-                norm_scale = (
-                    self.weight_m_wdecomp.weight / (torch.linalg.norm(self.weight, dim=1)).unsqueeze(1)
-                )
-                weight = norm_scale * self.weight
-                self.weight.data.copy_(weight.detach())
-            else:
-                if self.r > 0 and hasattr(self, "lora_A"):
-                    delta = sum(B.weight @ A.weight for A, B in zip(self.lora_A, self.lora_B))
-                    new_weight_v = self.weight + transpose(delta, fan_in_fan_out=self.fan_in_fan_out) * self.scaling
-                    norm = torch.linalg.norm(new_weight_v, dim=1)
-                    if self.dora_simple:
-                        norm = norm.detach()
-                    weight = (self.weight_m_wdecomp.weight / norm.unsqueeze(1)) * new_weight_v
-                    self.weight.data.copy_(weight.detach())
-            self.merged = True
-        elif self.merge_weights and self.merged:
-            raise NotImplementedError
-
-    def eval(self):
-        nn.Linear.eval(self)
-        if not self.Wdecompose and hasattr(self, "lora_A"):
-            for A, B in zip(self.lora_A, self.lora_B):
-                A.eval()
-                B.eval()
-        self.weight_m_wdecomp.eval()
-
-    def forward(self, x: torch.Tensor, return_orth_loss: bool = False):
-        previous_dtype = self.weight.dtype
-
-        if self.disable_adapters:
-            raise NotImplementedError
-
-        elif self.Wdecompose and not self.merged:
-            norm_scale = self.weight_m_wdecomp.weight.view(-1) / (torch.linalg.norm(self.weight, dim=1))
-            org_result = F.linear(x, transpose(self.weight, self.fan_in_fan_out))
-            result = org_result + (norm_scale - 1) * (
-                F.linear(self.lora_dropout(x), transpose(self.weight, self.fan_in_fan_out))
-            )
-            if self.bias is not None:
-                result += self.bias.view(1, -1).expand_as(result)
-            if result.dtype != previous_dtype:
-                result = result.to(previous_dtype)
-            if return_orth_loss:
-                return result, torch.tensor(0.0, device=result.device)
-            return result
-
-        elif self.r > 0 and not self.merged:
-            delta = sum(B.weight @ A.weight for A, B in zip(self.lora_A, self.lora_B))
-            new_weight_v = self.weight + transpose(delta, fan_in_fan_out=self.fan_in_fan_out) * self.scaling
-            norm_val = torch.linalg.norm(new_weight_v, dim=1)
-            if self.dora_simple:
-                norm_val = norm_val.detach()
-            norm_scale = self.weight_m_wdecomp.weight.view(-1) / norm_val
-
-            org_result = F.linear(x, transpose(self.weight, self.fan_in_fan_out))
-            dropout_x = self.lora_dropout(x)
-            result = org_result + (norm_scale - 1) * (
-                F.linear(dropout_x, transpose(self.weight, self.fan_in_fan_out))
-            )
-            if self.bias is not None:
-                result += self.bias.view(1, -1).expand_as(result)
-
-            features = []
-            for A, B in zip(self.lora_A, self.lora_B):
-                feat = norm_scale * (B(A(dropout_x.to(A.weight.dtype)))) * self.scaling
-                features.append(feat)
-            result = result + self._aggregate(features)
-            if result.dtype != previous_dtype:
-                result = result.to(previous_dtype)
-            if return_orth_loss:
-                return result, self._orthogonality_loss(features)
-            return result
-        else:
-            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
-            if result.dtype != previous_dtype:
-                result = result.to(previous_dtype)
-            if return_orth_loss:
-                return result, torch.tensor(0.0, device=result.device)
-            return result
 
 
 class MergedLinear(nn.Linear, LoraLayer):
@@ -641,7 +381,113 @@ class MergedLinear(nn.Linear, LoraLayer):
         merge_weights: bool = True,
         **kwargs,
     ):
-        raise NotImplementedError
+        nn.Linear.__init__(self, in_features, out_features, **kwargs)
+        LoraLayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
+        if out_features % len(enable_lora) != 0:
+            raise ValueError("The length of enable_lora must divide out_features")
+        self.enable_lora = enable_lora
+        self.fan_in_fan_out = fan_in_fan_out
+        # Actual trainable parameters
+        if r > 0 and any(enable_lora):
+            self.lora_A = nn.Linear(in_features, r * sum(enable_lora), bias=False)
+            self.lora_B = nn.Conv1d(
+                r * sum(enable_lora),
+                out_features // len(enable_lora) * sum(enable_lora),
+                kernel_size=1,
+                groups=2,
+                bias=False,
+            )
+            self.scaling = self.lora_alpha / self.r
+            # Freezing the pre-trained weight matrix
+            self.weight.requires_grad = False
+            # Compute the indices
+            self.lora_ind = self.weight.new_zeros((out_features,), dtype=torch.bool).view(len(enable_lora), -1)
+            self.lora_ind[enable_lora, :] = True
+            self.lora_ind = self.lora_ind.view(-1)
+        self.reset_parameters()
+        if fan_in_fan_out:
+            self.weight.data = self.weight.data.T
+
+    def reset_parameters(self):
+        nn.Linear.reset_parameters(self)
+        if hasattr(self, "lora_A"):
+            # initialize A the same way as the default for nn.Linear and B to zero
+            nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+            nn.init.zeros_(self.lora_B.weight)
+
+    def zero_pad(self, x):
+        result = x.new_zeros((*x.shape[:-1], self.out_features))
+        result = result.view(-1, self.out_features)
+        result[:, self.lora_ind] = x.reshape(-1, self.out_features // len(self.enable_lora) * sum(self.enable_lora))
+        return result.view((*x.shape[:-1], self.out_features))
+
+    def train(self, mode: bool = True):
+        nn.Linear.train(self, mode)
+        self.lora_A.train(mode)
+        self.lora_B.train(mode)
+        if not mode and self.merge_weights and not self.merged:
+            # Merge the weights and mark it
+            if self.r > 0 and any(self.enable_lora):
+                delta_w = (
+                    F.conv1d(
+                        self.lora_A.weight.data.unsqueeze(0),
+                        self.lora_B.weight.data,
+                        groups=sum(self.enable_lora),
+                    )
+                    .squeeze(0)
+                    .transpose(-2, -1)
+                )
+                self.weight.data += transpose(self.zero_pad(delta_w * self.scaling), not self.fan_in_fan_out)
+            self.merged = True
+        elif self.merge_weights and self.merged:
+            # Make sure that the weights are not merged
+            if self.r > 0 and any(self.enable_lora):
+                delta_w = (
+                    F.conv1d(
+                        self.lora_A.weight.data.unsqueeze(0),
+                        self.lora_B.weight.data,
+                        groups=sum(self.enable_lora),
+                    )
+                    .squeeze(0)
+                    .transpose(-2, -1)
+                )
+                self.weight.data -= transpose(self.zero_pad(delta_w * self.scaling), not self.fan_in_fan_out)
+            self.merged = False
+
+    def eval(self):
+        nn.Linear.eval(self)
+        self.lora_A.eval()
+        self.lora_B.eval()
+
+    def forward(self, x: torch.Tensor):
+        previous_dtype = x.dtype
+        if self.disable_adapters:
+            if self.r > 0 and self.merged and any(self.enable_lora):
+                delta_w = (
+                    F.conv1d(
+                        self.lora_A.weight.data.unsqueeze(0),
+                        self.lora_B.weight.data,
+                        groups=sum(self.enable_lora),
+                    )
+                    .squeeze(0)
+                    .transpose(-2, -1)
+                )
+                delta_w = delta_w.to(self.weight.dtype)
+                self.weight.data -= transpose(self.zero_pad(delta_w * self.scaling), not self.fan_in_fan_out)
+                self.merged = False
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
+        elif self.merged:
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
+        else:
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
+            if self.r > 0:
+                after_A = self.lora_A(self.lora_dropout(x.to(self.lora_A.weight.dtype)))
+                after_B = self.lora_B(after_A.transpose(-2, -1)).transpose(-2, -1)
+                result += self.zero_pad(after_B) * self.scaling
+        result = result.to(previous_dtype)
+
+        return result
+
 
 if is_bnb_available():
 
@@ -654,10 +500,51 @@ if is_bnb_available():
             r: int = 0,
             lora_alpha: int = 1,
             lora_dropout: float = 0.0,
-            Wdecompose: bool = False,
             **kwargs,
         ):
-            raise NotImplementedError
+            bnb.nn.Linear8bitLt.__init__(
+                self,
+                in_features,
+                out_features,
+                bias=kwargs.get("bias", True),
+                has_fp16_weights=kwargs.get("has_fp16_weights", True),
+                memory_efficient_backward=kwargs.get("memory_efficient_backward", False),
+                threshold=kwargs.get("threshold", 0.0),
+                index=kwargs.get("index", None),
+            )
+            LoraLayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=False)
+            # Actual trainable parameters
+            if r > 0:
+                self.lora_A = nn.Linear(in_features, r, bias=False)
+                self.lora_B = nn.Linear(r, out_features, bias=False)
+                self.scaling = self.lora_alpha / self.r
+                # Freezing the pre-trained weight matrix
+                self.weight.requires_grad = False
+            self.reset_parameters()
+
+        def reset_parameters(self):
+            if hasattr(self, "lora_A"):
+                # initialize A the same way as the default for nn.Linear and B to zero
+                nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+                nn.init.zeros_(self.lora_B.weight)
+
+        def forward(self, x: torch.Tensor):
+            result = super().forward(x)
+
+            if self.disable_adapters:
+                return result
+            elif self.r > 0:
+                if not torch.is_autocast_enabled():
+                    expected_dtype = result.dtype
+
+                    if x.dtype != torch.float32:
+                        x = x.float()
+                    output = self.lora_B(self.lora_A(self.lora_dropout(x))).to(expected_dtype) * self.scaling
+                    result += output
+                else:
+                    output = self.lora_B(self.lora_A(self.lora_dropout(x))) * self.scaling
+                    result += output
+            return result
 
     class MergedLinear8bitLt(bnb.nn.Linear8bitLt, LoraLayer):
         # Lora implemented in a dense layer
@@ -671,4 +558,69 @@ if is_bnb_available():
             enable_lora: List[bool] = [False],
             **kwargs,
         ):
-            raise NotImplementedError
+            bnb.nn.Linear8bitLt.__init__(
+                self,
+                in_features,
+                out_features,
+                bias=kwargs.get("bias", True),
+                has_fp16_weights=kwargs.get("has_fp16_weights", True),
+                memory_efficient_backward=kwargs.get("memory_efficient_backward", False),
+                threshold=kwargs.get("threshold", 0.0),
+                index=kwargs.get("index", None),
+            )
+            LoraLayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=False)
+            if out_features % len(enable_lora) != 0:
+                raise ValueError("The length of enable_lora must divide out_features")
+            self.enable_lora = enable_lora
+            # Actual trainable parameters
+            if r > 0 and any(enable_lora):
+                self.lora_A = nn.Linear(in_features, r * sum(enable_lora), bias=False)
+                self.lora_B = nn.Conv1d(
+                    r * sum(enable_lora),
+                    out_features // len(enable_lora) * sum(enable_lora),
+                    kernel_size=1,
+                    groups=2,
+                    bias=False,
+                )
+                self.scaling = self.lora_alpha / self.r
+                # Freezing the pre-trained weight matrix
+                self.weight.requires_grad = False
+                # Compute the indices
+                self.lora_ind = self.weight.new_zeros((out_features,), dtype=torch.bool).view(len(enable_lora), -1)
+                self.lora_ind[enable_lora, :] = True
+                self.lora_ind = self.lora_ind.view(-1)
+            self.reset_parameters()
+
+        def reset_parameters(self):
+            if hasattr(self, "lora_A"):
+                # initialize A the same way as the default for nn.Linear and B to zero
+                nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+                nn.init.zeros_(self.lora_B.weight)
+
+        def zero_pad(self, x):
+            result = x.new_zeros((*x.shape[:-1], self.out_features))
+            result = result.view(-1, self.out_features)
+            result[:, self.lora_ind] = x.reshape(
+                -1, self.out_features // len(self.enable_lora) * sum(self.enable_lora)
+            )
+            return result.view((*x.shape[:-1], self.out_features))
+
+        def forward(self, x: torch.Tensor):
+            result = super().forward(x)
+            if self.disable_adapters:
+                return result
+            elif self.r > 0:
+                if not torch.is_autocast_enabled():
+                    expected_dtype = result.dtype
+                    if x.dtype != torch.float32:
+                        x = x.float()
+                    after_A = self.lora_A(self.lora_dropout(x))
+                    after_B = self.lora_B(after_A.transpose(-2, -1)).transpose(-2, -1)
+                    output = self.zero_pad(after_B).to(expected_dtype) * self.scaling
+                    result += output
+                else:
+                    after_A = self.lora_A(self.lora_dropout(x))
+                    after_B = self.lora_B(after_A.transpose(-2, -1)).transpose(-2, -1)
+                    output = self.zero_pad(after_B) * self.scaling
+                    result += output
+            return result
