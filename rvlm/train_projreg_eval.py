@@ -1,0 +1,332 @@
+import os
+import argparse
+from tqdm import tqdm
+import torch
+from torch import optim, nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from itertools import combinations
+from collections import defaultdict
+
+import wandb
+
+from data import load_dataset, DATASET2CLSNUM, imagenet_templates
+from core import clip, loralib, losses, utils, clip_loss
+from eval import load_test_configs, load_val_configs
+from utils import *
+from scheduler import cosine_lr
+
+def collate_fn_padded_dict(batch):
+    batch_size = args.batch_size
+
+    images = [b["images"] for b in batch]
+    labels = [b["labels"] for b in batch]
+    texts = [b["texts"] for b in batch]
+
+    max_size = images[0].shape
+    current_batch_size = len(images)
+
+    images = torch.stack(images, dim=0)
+    labels = torch.tensor(labels, dtype=torch.long)
+
+    if current_batch_size < batch_size:
+        pad_size = batch_size - current_batch_size
+
+        pad_images = torch.zeros((pad_size, *max_size), dtype=images.dtype)
+        images = torch.cat([images, pad_images], dim=0)
+
+        pad_labels = torch.full((pad_size,), -1, dtype=labels.dtype)
+        labels = torch.cat([labels, pad_labels], dim=0)
+
+        texts.extend(texts[:pad_size])
+
+    return {"images": images, "labels": labels, "texts":texts}
+
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--model", type=str, default="CLIP")
+    parser.add_argument("--arch", type=str, default="ViT-B/16")
+    parser.add_argument("--dataset", type=str, default="imagenet")
+    parser.add_argument("--prompt_id", type=int, default=10)
+    
+    # lora
+    parser.add_argument("--r", type=int, default=256)
+    parser.add_argument("--r_tr", type=int, default=256)
+    parser.add_argument("--num_lora", type=int, default=1)
+    parser.add_argument("--lora_alpha", type=float, default=256)
+    parser.add_argument("--lora_alpha_tr", type=float, default=256)
+    parser.add_argument("--lora_dropout", type=float, default=0.1)
+    parser.add_argument("--lora_modules", type=str, default="q,k,v,out,mlp")
+    parser.add_argument("--lora_w_pretrain", action="store_true")
+    parser.add_argument("--train_visual_proj", action="store_false")
+    parser.add_argument("--only_qk", action="store_true")
+    parser.add_argument("--only_qkv", action="store_true")
+    
+    # orthogonality
+    parser.add_argument("--last_num", type=int, default=24)
+    parser.add_argument("--lambda_cls", type=float, default=1.)
+    parser.add_argument("--lambda_desc_ortho", type=float, default=0.)
+    parser.add_argument("--lambda_feat_ortho", type=float, default=0.)
+    parser.add_argument("--lambda_param_ortho", type=float, default=0.)
+    parser.add_argument("--only_wA", action="store_true")
+    parser.add_argument("--compare_org", action="store_true")
+    parser.add_argument("--kl", action="store_true")
+    parser.add_argument("--dot", action="store_true")
+    parser.add_argument("--feat_kk", action="store_true")
+    parser.add_argument("--ortho_pretrained", action="store_true")
+    parser.add_argument("--loss_gram", action="store_true")
+
+    parser.add_argument("--lora_intermediate", action="store_true")
+
+    # multi-modal
+    parser.add_argument("--cl", action="store_true")
+    parser.add_argument("--mpm_cl", action="store_true")
+    
+
+    parser.add_argument("--freeze_text", action="store_true")
+    
+    #
+    parser.add_argument("--text_cls", action="store_true")
+    parser.add_argument("--desc_cls", action="store_true")
+    parser.add_argument("--desc_lambda", type=float, default=0.)
+    
+    # pca
+    parser.add_argument("--n_pca", type=int, default=100)
+    parser.add_argument("--pcaOrtho_lambda", type=float, default=0.)
+    parser.add_argument("--pca_perCls", action="store_true")
+
+    
+    # projection reg.
+    parser.add_argument("--lambda_reg_dir", type=float, default=0.)
+    parser.add_argument("--lambda_reg_norm", type=float, default=0.)
+    parser.add_argument("--lambda_reg_l2", type=float, default=0.)
+    
+    parser.add_argument("--m_start", type=float, default=0.0)
+    parser.add_argument("--m_end", type=float, default=0.0)
+    parser.add_argument("--m_warmUp", type=float, default=0.)
+
+
+    # sparsity regularization
+    parser.add_argument("--entropy", action="store_true")
+    parser.add_argument("--l1", action="store_true")
+    
+    #gating
+    parser.add_argument("--gating", action="store_true")
+
+    # train
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--test_batch_size", type=int, default=512)
+    parser.add_argument("--num_workers", type=int, default=32)
+    parser.add_argument("--optim", type=str, default="adamw", choices=["adamw", "sgd"])
+    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--wd", type=float, default=0.01)
+    parser.add_argument("--lr_schedule", action="store_true")
+    parser.add_argument("--warmup", type=int, default=500)
+    
+    parser.add_argument("--data_dir", type=str, default="../rvlm/data")
+    parser.add_argument("--save_dir", type=str, default=f"./experiments/models")
+    
+    parser.add_argument("--resume_id", type=str, default="")
+    args = parser.parse_args()
+    
+    ## Set ENV
+    utils.set_seed(args.seed)
+    args.n_cls = DATASET2CLSNUM[args.dataset]
+    args.lr_schedule = True
+
+    # if args.cl:
+    #     args.train_visual_proj = True
+    
+    if args.ortho_pretrained:
+        lora_idxs = list(range(args.num_lora+1))
+    else:
+        lora_idxs = list(range(args.num_lora))
+    
+    lora_pairs = list(combinations(lora_idxs, 2))
+    lora_modules = [m for m in args.lora_modules.split(',') if m in ['q', 'k', 'v', 'out', 'mlp']]
+    
+    save_dir = f"{args.save_dir}/{args.dataset}/CLIP@projReg_{args.lambda_reg_dir}_{args.lambda_reg_norm}_alpha_{args.lora_alpha}_{args.lora_alpha_tr}_LoRA_{args.arch.replace('/', '')}"
+
+    if args.mpm_cl:
+        save_dir += "_MPM"
+
+    # save_dir = f"{args.save_dir}/{args.dataset}/test"
+
+    if args.pcaOrtho_lambda > 0.:
+        # save_dir += f"_CL_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
+        # save_dir += f"_CLwTextLoRA_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
+        # save_dir += f"_CLwTextLoRA_freezeproj_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
+        save_dir += f"_CLwTextLoRA_freezeproj_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}_after5"
+    else:
+        save_dir += "_CLwTextLoRA_freezeproj"
+
+    if args.freeze_text:
+        save_dir += f"_freezeText"
+
+    if args.text_cls:
+        save_dir += f"_textCls"
+    if args.desc_cls:
+        save_dir += f"_textClswithDesc"
+        if args.desc_lambda != 0:
+            save_dir += f"_{args.desc_lambda}"
+
+
+    if args.lambda_desc_ortho > 0.:
+        save_dir += f"_desc{args.lambda_desc_ortho}_prompt{args.prompt_id}"
+
+    if args.lambda_feat_ortho > 0.:
+        if args.loss_gram:
+            save_dir += f"_feat{args.lambda_feat_ortho}_gram"
+        elif args.kl:
+            save_dir += f"_feat{args.lambda_feat_ortho}_kl"
+        elif args.dot:
+            save_dir += f"_feat{args.lambda_feat_ortho}_dot"
+        elif args.feat_kk:
+            save_dir += f"_feat{args.lambda_feat_ortho}_KK"
+        else:
+            save_dir += f"_feat{args.lambda_feat_ortho}_cosine"
+        if args.ortho_pretrained:
+            save_dir += "_preW"
+        if args.lora_intermediate:
+            save_dir += "_interFeat"
+
+
+    if args.lambda_param_ortho > 0.:
+        save_dir += f"_param{args.lambda_param_ortho}"
+
+    save_dir += f"_lr{args.lr}_wd{args.wd}"
+    if args.lr_schedule:
+        save_dir += f"lrschedule"
+
+
+    if args.train_visual_proj:
+        save_dir += '_proj'
+
+    save_dir += f'_batch{args.batch_size}'
+
+    if args.lora_w_pretrain: save_dir += "@wp"
+    if args.gating: save_dir += "@gating"
+
+    save_dir += f"@r{args.r}_alpha{args.lora_alpha}_num{args.num_lora}"
+
+    if args.lora_dropout > 0:
+        save_dir += f"_dropout{args.lora_dropout}"
+
+    if args.only_qk:
+        save_dir += "_qk/"
+    elif args.only_qkv:
+        save_dir +='_qkv/'
+    else:
+        save_dir += f"_{''.join(lora_modules)}/"
+
+    os.makedirs(save_dir, exist_ok=True)
+    write_json(f"{save_dir}config.json", vars(args))
+
+    latest_model_path = os.path.join(save_dir, "latest_model.pt")
+    latest_optimizer_path = os.path.join(save_dir, "latest_optimizer.pt")
+
+    ## Load model
+    if args.model == "CLIP":
+        train_dataset = load_dataset(args.data_dir, args.dataset, "train", None, args.prompt_id)
+        model = clip.CLIP_FT_desc(args, "cuda", train_dataset.class_descs, freeze_encoder=True).to("cuda")
+    else:
+        raise NotImplementedError(f'{args.model} is not implemented yet.')
+    print('{} w/o LoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
+    
+    # PCA ortho
+    ortho_feat_loss_fn = losses.OrthoFeatLoss(args.ortho_pretrained)
+    model.set_pcaOrtho(ortho_feat_loss_fn)
+
+    # ortho_param_loss_fn = losses.OrthoParamLoss(lora_pairs, args.compare_org)
+    if args.only_wA and args.compare_org:
+        raise NotImplementedError('We cannot compare wA with the original weight.')
+    
+    ## Load data
+    train_dataset = load_dataset(args.data_dir, args.dataset, "train", model.preprocess, args.prompt_id, args.cl)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False, num_workers=args.num_workers)
+    num_batches = len(train_loader)
+
+    valid_loader = load_val_configs(args, model.val_preprocess)
+    infer, evaluate, test_datasets, test_loaders, projection_fns = load_test_configs(args, model.val_preprocess)
+
+    all_class_texts = [template.format(k) for k in train_dataset.classnames for template in imagenet_templates]
+    num_classes = len(train_dataset.classnames)
+    num_templates = len(imagenet_templates)
+
+    if args.only_qk:
+        num_lora = {"q": args.num_lora, "k": args.num_lora, "v": 1, "out": 1}
+    elif args.only_qkv:
+        num_lora = {"q": args.num_lora, "k": args.num_lora, "v": args.num_lora, "out": 1}
+    else:
+        num_lora = {key: args.num_lora for key in lora_modules}
+
+    args.r = args.r_tr
+
+    if args.lambda_feat_ortho > 0. :
+        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate)
+        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
+    else:
+        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate)
+        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
+    # loralib.set_used_lora(model, lora_idxs)
+    loralib.set_used_lora(model, lora_idxs, visual_only=False)
+    print('{} w/  LoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
+    
+    ## Train
+    
+    # _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=True, train_text_proj=True, train_text_encoder=False, gating=args.gating)
+    _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+        
+    model = nn.DataParallel(model)
+    
+    if args.optim=="adamw": optimizer = optim.AdamW(trainable_params, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=args.wd)
+    elif args.optim=="sgd": optimizer = optim.SGD(trainable_params, lr=args.lr, momentum=0.9, weight_decay=args.wd)
+    if args.lr_schedule: scheduler = cosine_lr(optimizer, args.lr, args.warmup, args.epochs*num_batches)
+    # if args.lr_schedule: scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs*len(train_loader))
+    # fp16_scaler = torch.cuda.amp.GradScaler()
+    
+
+    # Check for existing checkpoint
+    if os.path.exists(latest_model_path) and os.path.exists(latest_optimizer_path):
+        print(f"Resuming training from {latest_model_path}")
+        loralib.load_lora(model.module, latest_model_path)
+        checkpoint = torch.load(latest_optimizer_path)
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_epoch = checkpoint["epoch"] + 1
+    else:
+        print("Starting training from scratch.")
+        start_epoch = 1
+
+
+
+    print("Evaluating pretrained LoRA...")
+    model.eval()
+    with torch.no_grad():
+
+        for scale in [0.5, 1.0, 1.5]:
+            print(f"Scale: {scale}")
+
+            model.module.set_lora_scaling(scale)
+            class_embs = []
+            for i in range(0, len(all_class_texts), args.batch_size):
+                batch_texts = all_class_texts[i : i + args.batch_size]
+                batch_embs = model(None, clip.tokenize(batch_texts).to("cuda")) 
+                class_embs.append(batch_embs)  
+            all_class_embs = torch.cat(class_embs, dim=0)
+            class_embs = all_class_embs.view(num_classes, num_templates, -1).mean(dim=1)
+            class_embs = class_embs / class_embs.norm(dim=-1, keepdim=True)
+
+            worst_acc, avg_acc, accs_by_group = evaluate(*infer(model, valid_loader, None, desc=f"Eval Validation", class_embs=class_embs), str=False)
+            print(f"Epoch {epoch}) Validation Set - Average accuracy: {avg_acc:.2f} | Worst Group accuracy: {worst_acc:.2f} | Acc by group: {[round(acc, 2) for acc in accs_by_group]}\n")
+
+            for test_dataset, test_loader, projection_fn in zip(test_datasets, test_loaders, projection_fns):
+                with torch.no_grad():
+                    test_worst_acc, test_avg_acc, test_accs_by_group = evaluate(*infer(model, test_loader, projection_fn, desc=f"Eval Test ({test_dataset})", class_embs=class_embs), str=False)
+                    print(f"Epoch {epoch}) Test Set ({test_dataset}) - Average accuracy: {test_avg_acc:.2f} | Worst Group accuracy: {test_worst_acc:.2f} | Acc by group: {[round(acc, 2) for acc in test_accs_by_group]}\n")
+
+
+
+    

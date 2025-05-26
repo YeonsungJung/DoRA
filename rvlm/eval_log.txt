@@ -1,0 +1,205 @@
+Evaluation on "./experiments/models/IN/CLIP@LoRA_desc_multi_p6_dot1.0"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_desc_multi_p6_dot1.0"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_desc_multi_p6_dot1.0"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+== CLIP+LoRA (epoch 1) ==  (imagenet-v2)
+Average accuracy: 0.310000 | Worst Group accuracy: None | Acc by group: None
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+Evaluation on "./experiments/models/IN/CLIP@LoRA_qkvout_256_dot1.0_lrschedule@q_k_v_out@r2"
+== CLIP+LoRA (epoch 1) ==  (imagenet-v2)
+Average accuracy: 0.310000 | Worst Group accuracy: None | Acc by group: None
+== CLIP+LoRA (epoch 1) ==  (imagenet-r)
+Average accuracy: 0.073333 | Worst Group accuracy: None | Acc by group: None
+== CLIP+LoRA (epoch 1) ==  (imagenet-a)
+Average accuracy: 0.080000 | Worst Group accuracy: None | Acc by group: None
+== CLIP ==  (imagenet-v2)
+Average accuracy: 0.080000 | Worst Group accuracy: None | Acc by group: None
+== CLIP ==  (imagenet-r)
+Average accuracy: 0.076667 | Worst Group accuracy: None | Acc by group: None
+== CLIP ==  (imagenet-a)
+Average accuracy: 0.120000 | Worst Group accuracy: None | Acc by group: None
+Test Set (imagenet-v2) - Average accuracy: 71.89 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 61.16 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 35.33 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 46.53 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.87 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 77.22 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 50.56 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.77 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 0.11 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 0.73 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 0.33 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 0.08 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 4.74 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 3.55 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 3.31 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 1.80 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 0.75 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 82.02 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.00 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 77.22 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 50.39 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.70 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 0.14 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 0.11 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 0.74 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 0.33 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 0.08 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 59.10 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 49.09 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 25.29 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 5.44 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 80.60 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.04 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 75.21 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 49.87 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 50.63 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 82.19 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.33 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 78.88 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 53.01 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.68 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Validation Set - Average accuracy: 78.45 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 70.71 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 79.16 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 52.44 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.55 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.0 =====
+===== scale=0.0 =====
+Validation Set - Average accuracy: 68.33 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 61.65 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 77.35 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 47.17 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 48.52 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.1 =====
+Validation Set - Average accuracy: 74.91 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 67.57 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 80.04 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 50.99 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.19 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.2 =====
+Validation Set - Average accuracy: 78.01 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 70.04 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 80.70 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 52.91 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.43 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.3 =====
+Validation Set - Average accuracy: 80.00 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 71.58 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 80.59 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 53.37 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.79 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.4 =====
+Validation Set - Average accuracy: 81.22 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.57 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 80.06 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 53.76 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.80 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.5 =====
+Validation Set - Average accuracy: 82.19 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.13 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 79.05 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 53.01 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.64 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.6 =====
+Validation Set - Average accuracy: 82.80 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.42 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 77.85 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 51.65 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.22 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.7 =====
+Validation Set - Average accuracy: 83.17 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 74.12 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 76.11 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 50.25 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.89 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.8 =====
+Validation Set - Average accuracy: 83.31 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.88 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 74.09 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 47.69 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 51.99 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.9 =====
+Validation Set - Average accuracy: 83.24 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.53 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 71.67 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 45.17 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 50.94 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=1.0 =====
+Validation Set - Average accuracy: 82.88 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.94 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 69.14 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 42.27 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 49.40 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.0 =====
+Validation Set - Average accuracy: 68.33 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 61.65 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 77.35 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 47.17 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 48.52 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.1 =====
+Validation Set - Average accuracy: 75.28 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 67.93 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 80.23 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 52.09 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.34 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.2 =====
+Validation Set - Average accuracy: 78.14 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 70.02 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 80.40 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 53.32 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 53.00 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.3 =====
+Validation Set - Average accuracy: 79.89 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 71.42 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 79.88 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 52.64 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.87 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.4 =====
+Validation Set - Average accuracy: 81.16 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.31 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 78.76 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 51.95 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.68 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.5 =====
+Validation Set - Average accuracy: 82.02 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.79 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 77.49 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 50.43 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.66 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.6 =====
+Validation Set - Average accuracy: 82.50 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.27 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 75.62 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 49.09 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 52.19 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.7 =====
+Validation Set - Average accuracy: 82.74 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.67 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 73.46 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 46.32 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 51.57 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.8 =====
+Validation Set - Average accuracy: 82.82 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 73.19 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 71.16 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 43.43 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 50.56 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=0.9 =====
+Validation Set - Average accuracy: 82.57 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.76 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 68.04 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 40.09 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 48.99 | Worst Group accuracy: 0.00 | Acc by group: [0]
+===== scale=1.0 =====
+Validation Set - Average accuracy: 82.17 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-v2) - Average accuracy: 72.10 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-r) - Average accuracy: 64.65 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-a) - Average accuracy: 36.87 | Worst Group accuracy: 0.00 | Acc by group: [0]
+Test Set (imagenet-sketch) - Average accuracy: 46.67 | Worst Group accuracy: 0.00 | Acc by group: [0]
