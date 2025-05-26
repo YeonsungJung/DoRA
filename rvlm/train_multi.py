@@ -1,6 +1,10 @@
 import os
 import argparse
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - fallback when tqdm is unavailable
+    def tqdm(iterable=None, *args, **kwargs):
+        return iterable if iterable is not None else range(kwargs.get('total', 0))
 import torch
 from torch import optim, nn
 import torch.nn.functional as F
