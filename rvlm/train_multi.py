@@ -1,6 +1,10 @@
 import os
 import argparse
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - fallback when tqdm is unavailable
+    def tqdm(iterable=None, *args, **kwargs):
+        return iterable if iterable is not None else range(kwargs.get('total', 0))
 import torch
 from torch import optim, nn
 import torch.nn.functional as F
@@ -53,10 +57,10 @@ if __name__=="__main__":
     parser.add_argument("--prompt_id", type=int, default=10)
     
     # lora
-    parser.add_argument("--r", type=int, default=32)
+    parser.add_argument("--r", type=int, default=8)
     parser.add_argument("--num_lora", type=int, default=4)
-    parser.add_argument("--lora_alpha", type=float, default=1.)
-    parser.add_argument("--lora_dropout", type=float, default=0.1)
+    parser.add_argument("--lora_alpha", type=float, default=16.)
+    parser.add_argument("--lora_dropout", type=float, default=0.05)
     parser.add_argument("--lora_modules", type=str, default="q,k,v,out,mlp")
     parser.add_argument("--lora_w_pretrain", action="store_true")
     parser.add_argument("--train_visual_proj", action="store_false")
@@ -257,22 +261,23 @@ if __name__=="__main__":
     else:
         num_lora = {key: args.num_lora for key in lora_modules}
 
-    if args.lambda_feat_ortho > 0. :
-        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate)
-        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
-    else:
-        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate)
-        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
-    # loralib.set_used_lora(model, lora_idxs)
-    loralib.set_used_lora(model, lora_idxs, visual_only=False)
-    print('{} w/  LoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
+    loralib.apply_multilinear(
+        model,
+        num_loras=args.num_lora,
+        r=args.r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        visual_only=False,
+        proj=args.train_visual_proj,
+    )
+    names, trainable_params = loralib.get_multilinear_params(model)
+    print('{} w/  DoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
     
     ## Train
     wandb.define_metric("step/iter")
     wandb.define_metric("step/*", step_metric="step/iter")
     
-    # _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=True, train_text_proj=True, train_text_encoder=False, gating=args.gating)
-    _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+    # obtain parameters from multilinear layers
     model = nn.DataParallel(model)
     
     if args.optim=="adamw": optimizer = optim.AdamW(trainable_params, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=args.wd)
@@ -284,7 +289,7 @@ if __name__=="__main__":
     # Check for existing checkpoint
     if os.path.exists(latest_model_path) and os.path.exists(latest_optimizer_path):
         print(f"Resuming training from {latest_model_path}")
-        loralib.load_lora(model.module, latest_model_path)
+        loralib.load_multilinear(model.module, latest_model_path)
         checkpoint = torch.load(latest_optimizer_path)
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         start_epoch = checkpoint["epoch"] + 1
@@ -388,8 +393,7 @@ if __name__=="__main__":
             del ortho_loss
 
 
-        # loralib.save_lora(model.module, latest_model_path, idxs=lora_idxs, train_visual_proj=True, train_text_proj=True, train_text_encoder=False, gating=args.gating)
-        loralib.save_lora(model.module, latest_model_path, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+        loralib.save_multilinear(model.module, latest_model_path)
         torch.save({"epoch": epoch, "optimizer_state_dict": optimizer.state_dict()}, latest_optimizer_path)
 
         # Evaluation on test sets
