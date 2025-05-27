@@ -8,7 +8,7 @@ from torch import nn
 import torch.distributed as dist
 from torch.nn.parallel import gather
 
-from ..loralib import LoRAInjectedLinear, LoRAInjectedMultiheadAttention
+from ..loralib import LoRAInjectedLinear, LoRAInjectedMultiheadAttention, MultiLinear
 
 
 class Bottleneck(nn.Module):
@@ -303,6 +303,8 @@ class VisionTransformer(nn.Module):
             if isinstance(self.proj, LoRAInjectedLinear):
                 x, _ = self.proj(x)
                 x = x["out"]
+            elif isinstance(self.proj, MultiLinear):
+                x = self.proj(x)
             else:
                 x = x @ self.proj
         return x
@@ -430,6 +432,8 @@ class CLIP(nn.Module):
         if isinstance(self.text_projection, LoRAInjectedLinear):
             x = self.text_projection(x)
             x = x["out"]
+        elif isinstance(self.text_projection, MultiLinear):
+            x = self.text_projection(x)
         else:
             x = x @ self.text_projection
         # x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection

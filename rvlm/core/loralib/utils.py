@@ -7,7 +7,7 @@ import torch.nn as nn
 
 from typing import Dict
 
-from .layers import LoRALayer, LoRAInjectedLinear, LoRAInjectedMultiheadAttention
+from .layers import LoRALayer, LoRAInjectedLinear, LoRAInjectedMultiheadAttention, MultiLinear
 
 
 def mark_only_lora_as_trainable(model: nn.Module, bias: str = 'none') -> None:
@@ -110,6 +110,64 @@ def apply_lora(model, num_lora=1, r=4, lora_alpha=1, lora_dropout=0., lora_modul
             to_layer.weight.data.copy_(proj_params.t())
             del model.model.text_projection
             model.model.text_projection = LoRAInjectedLinear(to_layer, num_lora["mlp"], r, lora_alpha, lora_dropout, feat_loss_fn, lora_intermediate=lora_intermediate, lambda_scale=lambda_scale).to(device).to(dtype)
+
+
+def apply_multilinear(model, num_loras=1, r=4, lora_alpha=1, lora_dropout=0.0, visual_only=True, proj=False):
+    """Replace Linear layers in the model with MultiLinear for DoRA."""
+    target_blocks = [model.model.visual.transformer.resblocks] if visual_only else [model.model.visual.transformer.resblocks, model.model.transformer.resblocks]
+    device, dtype = model.device, model.model.dtype
+
+    for target_block in target_blocks:
+        for parent, name, child in find_modules(target_block, ["ResidualAttentionBlock"], [nn.Linear]):
+            new_layer = MultiLinear(
+                child.in_features,
+                child.out_features,
+                r=r,
+                num_loras=num_loras,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+            ).to(device).to(dtype)
+            new_layer.weight.data.copy_(child.weight.data)
+            if child.bias is not None:
+                new_layer.bias.data.copy_(child.bias.data)
+            parent._modules[name] = new_layer
+
+    if proj:
+        proj_params = model.model.visual.proj
+        to_layer = MultiLinear(proj_params.shape[0], proj_params.shape[1], r=r, num_loras=num_loras, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=False).to(device).to(dtype)
+        to_layer.weight.data.copy_(proj_params.t())
+        del model.model.visual.proj
+        model.model.visual.proj = to_layer
+        if not visual_only:
+            proj_params = model.model.text_projection
+            to_layer = MultiLinear(proj_params.shape[0], proj_params.shape[1], r=r, num_loras=num_loras, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=False).to(device).to(dtype)
+            to_layer.weight.data.copy_(proj_params.t())
+            del model.model.text_projection
+            model.model.text_projection = to_layer
+
+
+def get_multilinear_params(model):
+    names, params = [], []
+    for name, param in model.named_parameters():
+        requires_grad = False
+        if "lora_A" in name or "lora_B" in name or "weight_m_wdecomp" in name:
+            requires_grad = True
+        elif name.startswith("fc."):
+            requires_grad = True
+        if requires_grad:
+            names.append(name)
+            params.append(param)
+        param.requires_grad = requires_grad
+    return names, params
+
+
+def save_multilinear(model, path):
+    torch.save(model.state_dict(), path)
+
+
+def load_multilinear(model, path, device="cuda:0"):
+    state = torch.load(path, map_location={device: "cuda:0"})
+    model.load_state_dict(state, strict=False)
 
 
 def get_lora_params(model, fc=True, idxs=[], train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=False):
