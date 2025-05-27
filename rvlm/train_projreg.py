@@ -51,13 +51,13 @@ if __name__=="__main__":
     parser.add_argument("--dataset", type=str, default="imagenet")
     parser.add_argument("--prompt_id", type=int, default=10)
     
-    # lora
-    parser.add_argument("--r", type=int, default=256)
-    parser.add_argument("--r_tr", type=int, default=256)
-    parser.add_argument("--num_lora", type=int, default=1)
-    parser.add_argument("--lora_alpha", type=float, default=256)
-    parser.add_argument("--lora_alpha_tr", type=float, default=256)
-    parser.add_argument("--lora_dropout", type=float, default=0.1)
+    # DoRA
+    parser.add_argument("--r", type=int, default=8)
+    parser.add_argument("--r_tr", type=int, default=8)
+    parser.add_argument("--num_lora", type=int, default=4)
+    parser.add_argument("--lora_alpha", type=float, default=16.)
+    parser.add_argument("--lora_alpha_tr", type=float, default=16.)
+    parser.add_argument("--lora_dropout", type=float, default=0.05)
     parser.add_argument("--lora_modules", type=str, default="q,k,v,out,mlp")
     parser.add_argument("--lora_w_pretrain", action="store_true")
     parser.add_argument("--train_visual_proj", action="store_false")
@@ -148,7 +148,7 @@ if __name__=="__main__":
     lora_pairs = list(combinations(lora_idxs, 2))
     lora_modules = [m for m in args.lora_modules.split(',') if m in ['q', 'k', 'v', 'out', 'mlp']]
     
-    save_dir = f"{args.save_dir}/{args.dataset}/CLIP@projReg_{args.lambda_reg_dir}_{args.lambda_reg_norm}_alpha_{args.lora_alpha}_{args.lora_alpha_tr}_LoRA_{args.arch.replace('/', '')}"
+    save_dir = f"{args.save_dir}/{args.dataset}/CLIP@projReg_{args.lambda_reg_dir}_{args.lambda_reg_norm}_alpha_{args.lora_alpha}_{args.lora_alpha_tr}_DoRA_{args.arch.replace('/', '')}"
 
     if args.mpm_cl:
         save_dir += "_MPM"
@@ -157,11 +157,11 @@ if __name__=="__main__":
 
     if args.pcaOrtho_lambda > 0.:
         # save_dir += f"_CL_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
-        # save_dir += f"_CLwTextLoRA_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
-        # save_dir += f"_CLwTextLoRA_freezeproj_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
-        save_dir += f"_CLwTextLoRA_freezeproj_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}_after5"
+        # save_dir += f"_CLwTextDoRA_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
+        # save_dir += f"_CLwTextDoRA_freezeproj_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}"
+        save_dir += f"_CLwTextDoRA_freezeproj_PCA{args.n_pca}_lambda{args.pcaOrtho_lambda}_after5"
     else:
-        save_dir += "_CLwTextLoRA_freezeproj"
+        save_dir += "_CLwTextDoRA_freezeproj"
 
     if args.freeze_text:
         save_dir += f"_freezeText"
@@ -246,7 +246,7 @@ if __name__=="__main__":
         model = clip.CLIP_FT_desc(args, "cuda", train_dataset.class_descs, freeze_encoder=True).to("cuda")
     else:
         raise NotImplementedError(f'{args.model} is not implemented yet.')
-    print('{} w/o LoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
+    print('{} w/o DoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
     
     # PCA ortho
     ortho_feat_loss_fn = losses.OrthoFeatLoss(args.ortho_pretrained)
@@ -276,22 +276,23 @@ if __name__=="__main__":
         num_lora = {key: args.num_lora for key in lora_modules}
 
 
-    if args.lambda_feat_ortho > 0. :
-        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate)
-        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
-    else:
-        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate)
-        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
-    # loralib.set_used_lora(model, lora_idxs)
-    loralib.set_used_lora(model, lora_idxs, visual_only=False)
-    print('{} w/  LoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
+    loralib.apply_multilinear(
+        model,
+        num_loras=args.num_lora,
+        r=args.r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        visual_only=False,
+        proj=args.train_visual_proj,
+    )
+    names, trainable_params = loralib.get_multilinear_params(model)
+    print('{} w/  DoRA: {:.1f}M'.format(args.model, sum(param.numel() for param in model.parameters())/1000000.0))
     
     ## Train
     wandb.define_metric("step/iter")
     wandb.define_metric("step/*", step_metric="step/iter")
     
-    # _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=True, train_text_proj=True, train_text_encoder=False, gating=args.gating)
-    _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+    # parameters already collected from MultiLinear layers
         
     model = nn.DataParallel(model)
     
@@ -305,7 +306,7 @@ if __name__=="__main__":
     # Check for existing checkpoint
     if os.path.exists(v_model_path) and os.path.exists(v_model_path):
         print(f"Resuming training from {v_model_path}")
-        loralib.load_lora(model.module, v_model_path)
+        loralib.load_multilinear(model.module, v_model_path)
         checkpoint = torch.load(v_optimizer_path)
         start_epoch = checkpoint["epoch"] + 1
     else:
@@ -322,30 +323,22 @@ if __name__=="__main__":
         if not projection_dirs and (epoch != 1 or os.path.exists(v_model_path) and os.path.exists(v_model_path)):
             print("Storing direction v")
             for name, module in model.named_modules():
-                if isinstance(module, loralib.LoRAInjectedLinear):
-                    if hasattr(module, 'lora0_A') and hasattr(module, 'lora0_B'):
-                        baseline_update = (args.lora_alpha / args.r) * torch.matmul(module.lora0_B.weight.data, module.lora0_A.weight.data).reshape(-1)
-                        norm_val = baseline_update.norm(p=2) 
-                        v = baseline_update / (norm_val + 1e-8)
-                        projection_dirs[name] = (v.clone(), norm_val.item())
-                elif isinstance(module, loralib.LoRAInjectedMultiheadAttention):
-                    for subname, submodule in module.named_modules():
-                        if isinstance(submodule, loralib.LoRAInjectedLinear):
-                            if hasattr(submodule, 'lora0_A') and hasattr(submodule, 'lora0_B'):
-                                full_name = f"{name}.{subname}"
-                                baseline_update = torch.matmul(submodule.lora0_B.weight.data, submodule.lora0_A.weight.data).reshape(-1)
-                                norm_val = baseline_update.norm(p=2)
-                                v = baseline_update / (norm_val + 1e-8)
-                                projection_dirs[full_name] = (v.clone(), norm_val.item())
+                if isinstance(module, loralib.MultiLinear):
+                    baseline_update = (args.lora_alpha / args.r) * torch.matmul(
+                        module.lora_B[0].weight.data, module.lora_A[0].weight.data
+                    ).reshape(-1)
+                    norm_val = baseline_update.norm(p=2)
+                    v = baseline_update / (norm_val + 1e-8)
+                    projection_dirs[name] = (v.clone(), norm_val.item())
 
-            _, trainable_params = loralib.get_lora_params(model.module, fc=True, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+            names, trainable_params = loralib.get_multilinear_params(model.module)
 
             # if args.optim=="adamw": optimizer = optim.AdamW(trainable_params, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=args.wd)
             # elif args.optim=="sgd": optimizer = optim.SGD(trainable_params, lr=args.lr, momentum=0.9, weight_decay=args.wd)
             # if args.lr_schedule: scheduler = cosine_lr(optimizer, args.lr, args.warmup, args.epochs*num_batches)
                                 
             if not os.path.exists(v_model_path):
-                loralib.save_lora(model.module, v_model_path, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+                loralib.save_multilinear(model.module, v_model_path)
                 torch.save({"epoch": epoch}, v_optimizer_path)
             break
 
@@ -408,7 +401,7 @@ if __name__=="__main__":
 
 
     # re-initialization
-    print("Reinitializing LoRA...")
+    print("Reinitializing DoRA...")
     args.lora_alpha=args.lora_alpha_tr
     args.r = args.r_tr
 
@@ -423,16 +416,16 @@ if __name__=="__main__":
     ortho_feat_loss_fn = losses.OrthoFeatLoss(args.ortho_pretrained)
     model.set_pcaOrtho(ortho_feat_loss_fn)
 
-    if args.lambda_feat_ortho > 0. :
-        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate)
-        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, ortho_feat_loss_fn, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
-    else:
-        # loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate)
-        loralib.apply_lora(model, num_lora, args.r, args.lora_alpha, args.lora_dropout, lora_modules, gating=args.gating, lora_intermediate=args.lora_intermediate, visual_only=False)
-    # loralib.set_used_lora(model, lora_idxs)
-    loralib.set_used_lora(model, lora_idxs, visual_only=False)
-
-    _, trainable_params = loralib.get_lora_params(model, fc=True, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+    loralib.apply_multilinear(
+        model,
+        num_loras=args.num_lora,
+        r=args.r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        visual_only=False,
+        proj=args.train_visual_proj,
+    )
+    names, trainable_params = loralib.get_multilinear_params(model)
     model = nn.DataParallel(model)
     
     if args.optim=="adamw": optimizer = optim.AdamW(trainable_params, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=args.wd)
@@ -454,7 +447,7 @@ if __name__=="__main__":
     #                     submodule.scaling = 1 / submodule.r
 
 
-    print("Training LoRA...")
+    print("Training DoRA...")
     if args.mpm_cl:
         # MCM loss
         clip_loss_fn = clip_loss.ClipLoss(local_loss=False,
@@ -513,10 +506,10 @@ if __name__=="__main__":
             layerwise_logs = {}
             if projection_dirs:
                 for name, module in model.named_modules():
-                    if isinstance(module, loralib.LoRAInjectedLinear):
+                    if isinstance(module, loralib.MultiLinear):
                         v, norm_val = projection_dirs[name]
                         v = v.detach()
-                        current_update = torch.matmul(module.lora0_B.weight, module.lora0_A.weight).reshape(-1)
+                        current_update = torch.matmul(module.lora_B[0].weight, module.lora_A[0].weight).reshape(-1)
 
                         # cos_sim = F.cosine_similarity(current_update, v, dim=0)
                         # dir_reg_loss += cos_sim
@@ -540,34 +533,7 @@ if __name__=="__main__":
 
                         # layerwise_logs[f"norm/{name}/proj_reg_loss"] = proj_component.norm(p=2).item()
 
-                    elif isinstance(module, loralib.LoRAInjectedMultiheadAttention):
-                        for subname, submodule in module.named_modules():
-                            if isinstance(submodule, loralib.LoRAInjectedLinear):
-                                full_name = f"{name}.{subname}"
-
-                                v, norm_val= projection_dirs[full_name]
-                                v = v.detach()
-
-                                current_update = torch.matmul(submodule.lora0_B.weight, submodule.lora0_A.weight).reshape(-1)
-
-                                #cos_sim = F.cosine_similarity(current_update, v, dim=0)
-                                #dir_reg_loss += cos_sim
-
-                                # norm_reg = F.relu(((args.lora_alpha / args.r)*current_update).norm(p=2) - norm_val*0.5) ** 2  # only penalize if norm > norm_val
-                                # norm_reg_loss += norm_reg
-
-                                l2_reg = ((args.lora_alpha / args.r)*current_update).norm(p=2)
-                                l2_reg_loss += l2_reg
-
-                                # proj_component = torch.dot(current_update, v) * v  
-                                # proj_reg_loss += proj_component.norm(p=2) ** 2
-                                cnt += 1
-
-                                layerwise_logs[f"norm/{name}/pretrained_norm"] = norm_val*0.5
-                                layerwise_logs[f"norm/{full_name}/update_norm"] = current_update.norm(p=2).item()
-                                #layerwise_logs[f"norm/{name}/reg_dir"] = cos_sim.item()
-                                #layerwise_logs[f"norm/{name}/reg_norm"] = norm_reg.item()
-                                layerwise_logs[f"norm/{name}/l2_norm"] = l2_reg.item()
+                    # no need to handle multihead separately as its linear layers are also MultiLinear
                 dir_reg_loss /= cnt
                 norm_reg_loss /= cnt
                 l2_reg_loss /= cnt
@@ -627,8 +593,7 @@ if __name__=="__main__":
             #                         projection_dirs[full_name] = v_new / (v_new.norm(p=2) + 1e-8)
 
 
-        # loralib.save_lora(model.module, latest_model_path, idxs=lora_idxs, train_visual_proj=True, train_text_proj=True, train_text_encoder=False, gating=args.gating)
-        loralib.save_lora(model.module, latest_model_path, idxs=lora_idxs, train_visual_proj=False, train_text_proj=False, train_text_encoder=False, gating=args.gating)
+        loralib.save_multilinear(model.module, latest_model_path)
         torch.save({"epoch": epoch, "optimizer_state_dict": optimizer.state_dict()}, latest_optimizer_path)
 
         # Evaluation on test sets
