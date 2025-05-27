@@ -7,7 +7,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import math
-from typing import Optional, List
+from typing import Optional, List, Iterable
+
+
+def transpose(weight, fan_in_fan_out: bool):
+    """Utility function to handle weight transpose depending on layout."""
+    return weight.T if fan_in_fan_out else weight
 
 class ScaleGrad(torch.autograd.Function):
     @staticmethod
@@ -733,5 +738,92 @@ class LoRAInjectedMultiheadAttention(nn.Module):
         if valid_losses: feat_loss = torch.tensor([sum(valid_losses), len(valid_losses)], device=query.device, dtype=query.dtype)
         else: feat_loss = None
         ##########################################
-        
+
         return attn_output, attn_output_weights, feat_loss
+
+
+class MultiLinear(nn.Linear, LoRALayer):
+    """Linear layer supporting multiple parallel LoRA adapters for DoRA."""
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        r: int = 0,
+        num_loras: int = 1,
+        lora_alpha: int = 1,
+        lora_dropout: float = 0.0,
+        fan_in_fan_out: bool = False,
+        merge_weights: bool = True,
+        **kwargs,
+    ):
+        nn.Linear.__init__(self, in_features, out_features, **kwargs)
+        LoRALayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
+
+        self.weight_m_wdecomp = nn.Linear(1, out_features, bias=False)
+        self.num_loras = num_loras
+        self.fan_in_fan_out = fan_in_fan_out
+
+        if r > 0 and num_loras > 0:
+            self.lora_A = nn.ModuleList([nn.Linear(in_features, r, bias=False) for _ in range(num_loras)])
+            self.lora_B = nn.ModuleList([nn.Linear(r, out_features, bias=False) for _ in range(num_loras)])
+            self.scaling = self.lora_alpha / self.r
+            self.weight.requires_grad = False
+
+        self.reset_parameters()
+        if fan_in_fan_out:
+            self.weight.data = self.weight.data.T
+
+    def reset_parameters(self):
+        nn.Linear.reset_parameters(self)
+        if hasattr(self, "lora_A"):
+            for A, B in zip(self.lora_A, self.lora_B):
+                nn.init.kaiming_uniform_(A.weight, a=math.sqrt(5))
+                nn.init.zeros_(B.weight)
+
+    def _aggregate(self, features: Iterable[torch.Tensor]) -> torch.Tensor:
+        stack = torch.stack(list(features), dim=0)
+        return stack.sum(dim=0)
+
+    def forward(self, x: torch.Tensor, return_orth_loss: bool = False):
+        previous_dtype = self.weight.dtype
+
+        if self.r > 0 and not self.merged:
+            delta = sum(B.weight @ A.weight for A, B in zip(self.lora_A, self.lora_B))
+            new_weight_v = self.weight + transpose(delta, fan_in_fan_out=self.fan_in_fan_out) * self.scaling
+            norm_val = torch.linalg.norm(new_weight_v, dim=1).detach()
+            norm_scale = self.weight_m_wdecomp.weight.view(-1) / norm_val
+
+            org_result = F.linear(x, transpose(self.weight, self.fan_in_fan_out))
+            dropout_x = self.lora_dropout(x)
+            result = org_result + (norm_scale - 1) * (
+                F.linear(dropout_x, transpose(self.weight, self.fan_in_fan_out))
+            )
+            if self.bias is not None:
+                result += self.bias.view(1, -1).expand_as(result)
+
+            features = []
+            for A, B in zip(self.lora_A, self.lora_B):
+                feat = norm_scale * (B(A(dropout_x.to(A.weight.dtype)))) * self.scaling
+                features.append(feat)
+            result = result + self._aggregate(features)
+            if result.dtype != previous_dtype:
+                result = result.to(previous_dtype)
+            if return_orth_loss:
+                # Simple cosine orthogonality
+                loss = 0.0
+                if len(features) > 1:
+                    for i in range(len(features)):
+                        for j in range(i + 1, len(features)):
+                            f1 = features[i].flatten(1)
+                            f2 = features[j].flatten(1)
+                            loss = loss + torch.abs(F.cosine_similarity(f1, f2, dim=1)).mean()
+                return result, loss
+            return result
+        else:
+            result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
+            if result.dtype != previous_dtype:
+                result = result.to(previous_dtype)
+            if return_orth_loss:
+                return result, torch.tensor(0.0, device=result.device)
+            return result
